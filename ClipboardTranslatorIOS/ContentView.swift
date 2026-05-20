@@ -1,29 +1,11 @@
 import SwiftUI
 
-extension UIApplication {
-    var rootViewController: UIViewController? {
-        return self.connectedScenes
-            .filter { $0.activationState == .foregroundActive }
-            .first(where: { $0 is UIWindowScene })
-            .flatMap { $0 as? UIWindowScene }?
-            .windows
-            .first(where: { $0.isKeyWindow })?
-            .rootViewController
-    }
-}
-
 struct ContentView: View {
-    @StateObject private var translationService: TranslationService
-    @StateObject private var pipManager: PipTranslationManager
+    @EnvironmentObject private var translationService: TranslationService
+    @EnvironmentObject private var pipManager: PipTranslationManager
     @State private var isDownloading = false
     @State private var showAlert = false
     @State private var alertMessage = ""
-
-    init() {
-        let service = TranslationService()
-        _translationService = StateObject(wrappedValue: service)
-        _pipManager = StateObject(wrappedValue: PipTranslationManager(translationService: service))
-    }
 
     var body: some View {
         ZStack {
@@ -36,6 +18,11 @@ struct ContentView: View {
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
+
+            // Hidden source view for PiP
+            PipSourceView(sourceView: pipManager.sourceView)
+                .frame(width: 1, height: 1)
+                .opacity(0.01)
 
             ScrollView {
                 VStack(spacing: 24) {
@@ -81,7 +68,7 @@ struct ContentView: View {
                             StatusPill(title: "English", active: translationService.isEnToZhDownloaded)
                         }
 
-                        if !translationService.isZhToEnDownloaded || !translationService.isEnToZhDownloaded {
+                        if !translationService.isModelsReady {
                             Button(action: {
                                 isDownloading = true
                                 translationService.downloadModels { success in
@@ -147,12 +134,7 @@ struct ContentView: View {
                             if pipManager.isPipActive {
                                 pipManager.stopPip()
                             } else {
-                                if let rootVC = UIApplication.shared.rootViewController {
-                                    pipManager.startPip(from: rootVC)
-                                } else {
-                                    alertMessage = "Unable to launch PiP window."
-                                    showAlert = true
-                                }
+                                pipManager.startPip()
                             }
                         }) {
                             Text(pipManager.isPipActive ? "Stop Overlay" : "Start Floating Overlay")
@@ -167,7 +149,7 @@ struct ContentView: View {
                                 )
                                 .cornerRadius(12)
                         }
-                        .disabled(!translationService.isZhToEnDownloaded || !translationService.isEnToZhDownloaded)
+                        .disabled(!translationService.isModelsReady)
                     }
                     .padding()
                     .background(Color.white.opacity(0.04))
@@ -288,8 +270,4 @@ struct GuideStep: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
-}
-
-#Preview {
-    ContentView()
 }

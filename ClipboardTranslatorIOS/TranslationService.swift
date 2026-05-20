@@ -1,5 +1,6 @@
 import Foundation
 import MLKitTranslate
+import Combine
 
 class TranslationService: ObservableObject {
     @Published var isModelsReady = false
@@ -7,26 +8,23 @@ class TranslationService: ObservableObject {
     @Published var isEnToZhDownloaded = false
     @Published var statusMessage = "Language packs required for offline use"
 
-    private var zhToEnTranslator: Translator?
-    private var enToZhTranslator: Translator?
+    private let zhToEnTranslator: Translator
+    private let enToZhTranslator: Translator
 
     init() {
-        setupTranslators()
-        checkModelStatus()
-    }
-
-    private func setupTranslators() {
         let zhToEnOptions = TranslatorOptions(
-            sourceLanguage: TranslateLanguage.chinese,
-            targetLanguage: TranslateLanguage.english
+            sourceLanguage: .chinese,
+            targetLanguage: .english
         )
         zhToEnTranslator = Translator.translator(options: zhToEnOptions)
 
         let enToZhOptions = TranslatorOptions(
-            sourceLanguage: TranslateLanguage.english,
-            targetLanguage: TranslateLanguage.chinese
+            sourceLanguage: .english,
+            targetLanguage: .chinese
         )
         enToZhTranslator = Translator.translator(options: enToZhOptions)
+        
+        checkModelStatus()
     }
 
     func checkModelStatus() {
@@ -35,6 +33,7 @@ class TranslationService: ObservableObject {
         let enModel = TranslateRemoteModel.translateRemoteModel(language: .english)
         let zhReady = modelManager.isModelDownloaded(zhModel)
         let enReady = modelManager.isModelDownloaded(enModel)
+        
         DispatchQueue.main.async {
             self.isZhToEnDownloaded = zhReady && enReady
             self.isEnToZhDownloaded = enReady && zhReady
@@ -53,7 +52,7 @@ class TranslationService: ObservableObject {
             allowsCellularAccess: true,
             allowsBackgroundDownloading: true
         )
-        zhToEnTranslator?.downloadModelIfNeeded(with: conditions) { [weak self] error in
+        zhToEnTranslator.downloadModelIfNeeded(with: conditions) { [weak self] error in
             if let error = error {
                 DispatchQueue.main.async {
                     self?.statusMessage = "Chinese model failed: \(error.localizedDescription)"
@@ -62,7 +61,7 @@ class TranslationService: ObservableObject {
                 return
             }
             DispatchQueue.main.async { self?.statusMessage = "Downloading English model..." }
-            self?.enToZhTranslator?.downloadModelIfNeeded(with: conditions) { [weak self] error in
+            self?.enToZhTranslator.downloadModelIfNeeded(with: conditions) { [weak self] error in
                 if let error = error {
                     DispatchQueue.main.async {
                         self?.statusMessage = "English model failed: \(error.localizedDescription)"
@@ -90,11 +89,7 @@ class TranslationService: ObservableObject {
         guard !cleaned.isEmpty else { completion(""); return }
 
         let translator = isChineseText(cleaned) ? zhToEnTranslator : enToZhTranslator
-        guard let translator = translator else {
-            completion("Download models first")
-            return
-        }
-
+        
         let conditions = ModelDownloadConditions(
             allowsCellularAccess: false,
             allowsBackgroundDownloading: false

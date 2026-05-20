@@ -4,7 +4,6 @@ import AVKit
 import AVFoundation
 
 // MARK: - PiP Content View Controller
-// Must subclass AVPictureInPictureVideoCallViewController for the ContentSource API
 class PipContentViewController: AVPictureInPictureVideoCallViewController {
     let originalLabel = UILabel()
     let arrowLabel = UILabel()
@@ -76,7 +75,7 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
     private var audioPlayer: AVAudioPlayer?
     private var clipboardTimer: Timer?
     private var lastCopiedString = ""
-    private let translationService: TranslationService
+    private var translationService: TranslationService?
 
     init(translationService: TranslationService) {
         self.translationService = translationService
@@ -115,11 +114,15 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
         }
         func appendInt32(_ v: Int32) {
             let val = v.littleEndian
-            wav.append(contentsOf: withUnsafeBytes(of: val) { Array($0) })
+            wav.append(UInt8(truncatingIfNeeded: val))
+            wav.append(UInt8(truncatingIfNeeded: val >> 8))
+            wav.append(UInt8(truncatingIfNeeded: val >> 16))
+            wav.append(UInt8(truncatingIfNeeded: val >> 24))
         }
         func appendInt16(_ v: Int16) {
             let val = v.littleEndian
-            wav.append(contentsOf: withUnsafeBytes(of: val) { Array($0) })
+            wav.append(UInt8(truncatingIfNeeded: val))
+            wav.append(UInt8(truncatingIfNeeded: val >> 8))
         }
 
         appendString("RIFF")
@@ -152,6 +155,7 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
             return
         }
 
+        // Attach source view to parent so it is in the view hierarchy (required by API)
         parentViewController.view.addSubview(sourceView)
 
         let contentSource = AVPictureInPictureController.ContentSource(
@@ -198,7 +202,7 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
         lastCopiedString = copied
         DispatchQueue.main.async { self.currentText = copied }
 
-        translationService.translate(copied) { [weak self] result in
+        translationService?.translate(copied) { [weak self] result in
             DispatchQueue.main.async {
                 self?.translatedText = result
                 self?.pipContentVC.update(original: copied, translated: result)

@@ -10,5 +10,5 @@ targets:
     info:
       path: ClipboardTranslatorIOS/Info.plist
       properties:
-        UIBackgroundModes: [audio]
+        UIBackgroundModes: [audio, fetch]
         UILaunchScreen: {}

@@ -3,27 +3,31 @@ import AVFoundation
 
 @main
 struct ClipboardTranslatorIOSApp: App {
-    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @StateObject private var translationService = TranslationService()
+    @StateObject private var pipManager = PipTranslationManager()
+    
+    init() {
+        setupAudioSession()
+    }
     
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environmentObject(translationService)
+                .environmentObject(pipManager)
+                .onAppear {
+                    pipManager.setService(translationService)
+                }
         }
     }
-}
-
-class AppDelegate: NSObject, UIApplicationDelegate {
-    func application(
-        _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
-    ) -> Bool {
-        // Enable background audio session category on start
+    
+    private func setupAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
+            try session.setCategory(.playAndRecord, mode: .videoChat, options: [.mixWithOthers, .defaultToSpeaker])
+            try session.setActive(true)
         } catch {
             print("Startup audio session configuration failed: \(error.localizedDescription)")
         }
-        return true
     }
 }
