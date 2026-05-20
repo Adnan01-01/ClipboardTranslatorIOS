@@ -58,7 +58,7 @@ class PipContentViewController: AVPictureInPictureVideoCallViewController {
     func update(original: String, translated: String) {
         let maxLen = 45
         let snippet = original.count > maxLen ? String(original.prefix(maxLen)) + "…" : original
-        originalLabel.text = ""\(snippet)""
+        originalLabel.text = "\"\(snippet)\""
         translatedLabel.text = translated
         arrowLabel.isHidden = translated.isEmpty
     }
