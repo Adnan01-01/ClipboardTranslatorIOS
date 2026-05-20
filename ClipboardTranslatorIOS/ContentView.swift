@@ -1,11 +1,39 @@
 import SwiftUI
 
+// MARK: - Helpers
+struct PipSourceView: UIViewRepresentable {
+    let sourceView: UIView
+    func makeUIView(context: Context) -> UIView {
+        sourceView.backgroundColor = .clear
+        return sourceView
+    }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
+struct ViewControllerFinder: UIViewControllerRepresentable {
+    var onFind: (UIViewController) -> Void
+    func makeUIViewController(context: Context) -> UIViewController {
+        let vc = UIViewController()
+        vc.view.backgroundColor = .clear
+        DispatchQueue.main.async {
+            if let parent = vc.parent {
+                onFind(parent)
+            } else {
+                onFind(vc)
+            }
+        }
+        return vc
+    }
+    func updateUIViewController(_ vc: UIViewController, context: Context) {}
+}
+
 struct ContentView: View {
     @EnvironmentObject private var translationService: TranslationService
     @EnvironmentObject private var pipManager: PipTranslationManager
     @State private var isDownloading = false
     @State private var showAlert = false
     @State private var alertMessage = ""
+    @State private var hostVC: UIViewController?
 
     var body: some View {
         ZStack {
@@ -19,10 +47,11 @@ struct ContentView: View {
             )
             .ignoresSafeArea()
 
-            // Hidden source view for PiP
-            PipSourceView(sourceView: pipManager.sourceView)
-                .frame(width: 1, height: 1)
-                .opacity(0.01)
+            // Helper to find the host UIViewController
+            ViewControllerFinder { vc in
+                self.hostVC = vc
+            }
+            .frame(width: 0, height: 0)
 
             ScrollView {
                 VStack(spacing: 24) {
@@ -134,7 +163,12 @@ struct ContentView: View {
                             if pipManager.isPipActive {
                                 pipManager.stopPip()
                             } else {
-                                pipManager.startPip()
+                                if let vc = hostVC {
+                                    pipManager.startPip(from: vc)
+                                } else {
+                                    alertMessage = "Unable to find parent view controller."
+                                    showAlert = true
+                                }
                             }
                         }) {
                             Text(pipManager.isPipActive ? "Stop Overlay" : "Start Floating Overlay")

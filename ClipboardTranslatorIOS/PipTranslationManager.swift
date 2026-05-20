@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import AVKit
 import AVFoundation
+import Combine
 
 // MARK: - PiP Content View Controller
 class PipContentViewController: AVPictureInPictureVideoCallViewController {
@@ -71,11 +72,11 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
 
     private var pipController: AVPictureInPictureController?
     private let pipContentVC = PipContentViewController()
-    private let sourceView = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
+    let sourceView = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
     private var audioPlayer: AVAudioPlayer?
     private var clipboardTimer: Timer?
     private var lastCopiedString = ""
-    private var translationService: TranslationService?
+    private let translationService: TranslationService
 
     init(translationService: TranslationService) {
         self.translationService = translationService
@@ -83,10 +84,16 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
         setupAudioSession()
     }
 
+    deinit {
+        stopPip()
+        stopClipboardPolling()
+    }
+
     // MARK: - Audio Session
     private func setupAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
+            // Using .playback as recommended for PiP reliability
             try session.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
             try session.setActive(true)
             if let url = createSilentWavFile() {
@@ -113,16 +120,12 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
             wav.append(contentsOf: s.utf8)
         }
         func appendInt32(_ v: Int32) {
-            let val = v.littleEndian
-            wav.append(UInt8(truncatingIfNeeded: val))
-            wav.append(UInt8(truncatingIfNeeded: val >> 8))
-            wav.append(UInt8(truncatingIfNeeded: val >> 16))
-            wav.append(UInt8(truncatingIfNeeded: val >> 24))
+            var val = v.littleEndian
+            withUnsafeBytes(of: val) { wav.append(contentsOf: $0) }
         }
         func appendInt16(_ v: Int16) {
-            let val = v.littleEndian
-            wav.append(UInt8(truncatingIfNeeded: val))
-            wav.append(UInt8(truncatingIfNeeded: val >> 8))
+            var val = v.littleEndian
+            withUnsafeBytes(of: val) { wav.append(contentsOf: $0) }
         }
 
         appendString("RIFF")
@@ -155,7 +158,6 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
             return
         }
 
-        // Attach source view to parent so it is in the view hierarchy (required by API)
         parentViewController.view.addSubview(sourceView)
 
         let contentSource = AVPictureInPictureController.ContentSource(
@@ -165,7 +167,7 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
 
         pipController = AVPictureInPictureController(contentSource: contentSource)
         pipController?.delegate = self
-        pipController?.canStartPictureInPictureAutomaticallyFromBackground = true
+        pipController?.canStartPictureInPictureAutomaticallyFromInline = true
 
         audioPlayer?.play()
 
@@ -202,7 +204,7 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
         lastCopiedString = copied
         DispatchQueue.main.async { self.currentText = copied }
 
-        translationService?.translate(copied) { [weak self] result in
+        translationService.translate(copied) { [weak self] result in
             DispatchQueue.main.async {
                 self?.translatedText = result
                 self?.pipContentVC.update(original: copied, translated: result)
