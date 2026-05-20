@@ -1,20 +1,14 @@
 name: ClipboardTranslatorIOS
 options:
   bundleIdPrefix: com.personal
-packages:
-  MLKit:
-    url: https://github.com/google/mlkit-spm.git
-    from: 0.2.0
 targets:
   ClipboardTranslatorIOS:
     type: application
     platform: iOS
     deploymentTarget: "16.0"
     sources: [ClipboardTranslatorIOS]
-    dependencies:
-      - package: MLKit
-        product: MLKitTranslate
     info:
       path: ClipboardTranslatorIOS/Info.plist
       properties:
         UIBackgroundModes: [audio]
+        UILaunchScreen: {}
