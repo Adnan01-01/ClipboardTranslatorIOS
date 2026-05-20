@@ -30,10 +30,10 @@ workflows:
             -sdk iphonesimulator \
             -configuration Debug \
             build \
-            CONFIGURATION_BUILD_DIR=$FCI_BUILD_DIR/build
+            -derivedDataPath $FCI_BUILD_DIR/DerivedData
       - name: Compress Simulator Build
         script: |
-          cd $FCI_BUILD_DIR/build
+          cd $FCI_BUILD_DIR/DerivedData/Build/Products/Debug-iphonesimulator
           zip -r $FCI_BUILD_DIR/ClipboardTranslatorIOS.zip ClipboardTranslatorIOS.app
     artifacts:
       - $FCI_BUILD_DIR/ClipboardTranslatorIOS.zip
