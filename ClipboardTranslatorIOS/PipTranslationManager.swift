@@ -114,12 +114,12 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
             wav.append(contentsOf: s.utf8)
         }
         func appendInt32(_ v: Int32) {
-            var val = v.littleEndian
-            wav.append(contentsOf: withUnsafeBytes(of: &val) { Array($0) })
+            let val = v.littleEndian
+            wav.append(contentsOf: withUnsafeBytes(of: val) { Array($0) })
         }
         func appendInt16(_ v: Int16) {
-            var val = v.littleEndian
-            wav.append(contentsOf: withUnsafeBytes(of: &val) { Array($0) })
+            let val = v.littleEndian
+            wav.append(contentsOf: withUnsafeBytes(of: val) { Array($0) })
         }
 
         appendString("RIFF")
