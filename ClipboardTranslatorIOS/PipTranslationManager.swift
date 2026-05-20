@@ -3,210 +3,221 @@ import UIKit
 import AVKit
 import AVFoundation
 
-class PipViewController: UIViewController {
-    let textLabel = UILabel()
-    
+// MARK: - PiP Content View Controller
+// Must subclass AVPictureInPictureVideoCallViewController for the ContentSource API
+class PipContentViewController: AVPictureInPictureVideoCallViewController {
+    let containerView = UIView()
+    let originalLabel = UILabel()
+    let arrowLabel = UILabel()
+    let translatedLabel = UILabel()
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = UIColor.black.withAlphaComponent(0.85)
-        
-        // Premium typography and UI design
-        textLabel.textColor = .white
-        textLabel.font = UIFont.systemFont(ofSize: 14, weight: .semibold)
-        textLabel.numberOfLines = 0
-        textLabel.textAlignment = .center
-        textLabel.text = "Copy text to begin..."
-        
-        view.addSubview(textLabel)
-        textLabel.translatesAutoresizingMaskIntoConstraints = false
+        preferredContentSize = CGSize(width: 320, height: 120)
+        setupUI()
+    }
+
+    private func setupUI() {
+        // Dark glass background
+        view.backgroundColor = UIColor(red: 0.08, green: 0.08, blue: 0.12, alpha: 0.95)
+
+        // Source text label (top)
+        originalLabel.textColor = UIColor(red: 0.6, green: 0.8, blue: 1.0, alpha: 1.0)
+        originalLabel.font = UIFont.systemFont(ofSize: 11, weight: .regular)
+        originalLabel.numberOfLines = 2
+        originalLabel.textAlignment = .center
+        originalLabel.text = "Copy text to begin..."
+
+        // Arrow
+        arrowLabel.text = "⬇"
+        arrowLabel.textAlignment = .center
+        arrowLabel.font = UIFont.systemFont(ofSize: 10)
+        arrowLabel.textColor = .white.withAlphaComponent(0.5)
+
+        // Translated text label (bottom)
+        translatedLabel.textColor = .white
+        translatedLabel.font = UIFont.systemFont(ofSize: 13, weight: .semibold)
+        translatedLabel.numberOfLines = 2
+        translatedLabel.textAlignment = .center
+        translatedLabel.text = ""
+
+        let stack = UIStackView(arrangedSubviews: [originalLabel, arrowLabel, translatedLabel])
+        stack.axis = .vertical
+        stack.spacing = 4
+        stack.alignment = .center
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(stack)
         NSLayoutConstraint.activate([
-            textLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 14),
-            textLabel.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -14),
-            textLabel.topAnchor.constraint(equalTo: view.topAnchor, constant: 8),
-            textLabel.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -8)
+            stack.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            stack.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -12),
+            stack.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
+    }
+
+    func update(original: String, translated: String) {
+        let maxLen = 45
+        let snippet = original.count > maxLen ? String(original.prefix(maxLen)) + "…" : original
+        originalLabel.text = ""\(snippet)""
+        translatedLabel.text = translated
+        arrowLabel.isHidden = translated.isEmpty
     }
 }
 
+// MARK: - PiP Translation Manager
 class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureControllerDelegate {
     @Published var isPipActive = false
     @Published var currentText = ""
     @Published var translatedText = ""
-    @Published var lastCopiedString = ""
-    
+
     private var pipController: AVPictureInPictureController?
-    private let pipViewController = PipViewController()
+    private let pipContentVC = PipContentViewController()
+    // Invisible anchor view — required by ContentSource API
+    private let sourceView = UIView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
     private var audioPlayer: AVAudioPlayer?
     private var clipboardTimer: Timer?
+    private var lastCopiedString = ""
     private let translationService: TranslationService
-    
+
     init(translationService: TranslationService) {
         self.translationService = translationService
         super.init()
         setupAudioSession()
     }
-    
+
+    // MARK: - Audio Session (keeps app alive in background)
     private func setupAudioSession() {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .moviePlayback, options: [.mixWithOthers])
             try session.setActive(true)
-            
-            // Create and play silent WAV loop
-            if let silentURL = createSilentWavFile() {
-                audioPlayer = try AVAudioPlayer(contentsOf: silentURL)
-                audioPlayer?.numberOfLoops = -1 // Loop infinitely
-                audioPlayer?.volume = 0.01 // Very low volume to prevent noise
+            if let url = createSilentWavFile() {
+                audioPlayer = try AVAudioPlayer(contentsOf: url)
+                audioPlayer?.numberOfLoops = -1
+                audioPlayer?.volume = 0.001
             }
         } catch {
-            print("Audio session configuration failed: \(error.localizedDescription)")
+            print("Audio session error: \(error.localizedDescription)")
         }
     }
-    
+
     private func createSilentWavFile() -> URL? {
-        let fileManager = FileManager.default
-        guard let cacheDir = fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
-        let fileURL = cacheDir.appendingPathComponent("silence.wav")
-        
-        if fileManager.fileExists(atPath: fileURL.path) {
-            return fileURL
+        guard let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else { return nil }
+        let url = cacheDir.appendingPathComponent("silence.wav")
+        guard !FileManager.default.fileExists(atPath: url.path) else { return url }
+
+        // Minimal valid WAV: 44-byte header + 1 second of silence at 8kHz mono 16-bit
+        let dataSize = 16000 // 8000 samples * 2 bytes
+        var wav = Data()
+
+        func appendString(_ s: String) { wav.append(contentsOf: s.utf8) }
+        func appendInt32(_ v: Int32) {
+            var val = v.littleEndian
+            wav.append(contentsOf: withUnsafeBytes(of: &val) { Array($0) })
         }
-        
-        let sampleRate: Int32 = 8000
-        let numChannels: Int16 = 1
-        let bitsPerSample: Int16 = 16
-        let byteRate = sampleRate * Int32(numChannels) * Int32(bitsPerSample) / 8
-        let blockAlign = numChannels * bitsPerSample / 8
-        
-        var header = Data()
-        header.append("RIFF".data(using: .utf8)!)
-        var fileSize: Int32 = 36 + 8000 * 2
-        header.append(Data(bytes: &fileSize, count: 4))
-        header.append("WAVE".data(using: .utf8)!)
-        header.append("fmt ".data(using: .utf8)!)
-        var subchunk1Size: Int32 = 16
-        header.append(Data(bytes: &subchunk1Size, count: 4))
-        var audioFormat: Int16 = 1
-        header.append(Data(bytes: &audioFormat, count: 2))
-        var channels = numChannels
-        header.append(Data(bytes: &channels, count: 2))
-        var rate = sampleRate
-        header.append(Data(bytes: &rate, count: 4))
-        var bRate = byteRate
-        header.append(Data(bytes: &bRate, count: 4))
-        var align = blockAlign
-        header.append(Data(bytes: &align, count: 2))
-        var bps = bitsPerSample
-        header.append(Data(bytes: &bps, count: 2))
-        header.append("data".data(using: .utf8)!)
-        var subchunk2Size: Int32 = 8000 * 2
-        header.append(Data(bytes: &subchunk2Size, count: 4))
-        
-        let silentBuffer = Data(repeating: 0, count: 8000 * 2)
-        var wavData = Data()
-        wavData.append(header)
-        wavData.append(silentBuffer)
-        
-        do {
-            try wavData.write(to: fileURL)
-            return fileURL
-        } catch {
-            return nil
+        func appendInt16(_ v: Int16) {
+            var val = v.littleEndian
+            wav.append(contentsOf: withUnsafeBytes(of: &val) { Array($0) })
         }
+
+        appendString("RIFF")
+        appendInt32(Int32(36 + dataSize))
+        appendString("WAVE")
+        appendString("fmt ")
+        appendInt32(16)          // subchunk1 size
+        appendInt16(1)           // PCM format
+        appendInt16(1)           // mono
+        appendInt32(8000)        // sample rate
+        appendInt32(16000)       // byte rate
+        appendInt16(2)           // block align
+        appendInt16(16)          // bits per sample
+        appendString("data")
+        appendInt32(Int32(dataSize))
+        wav.append(Data(repeating: 0, count: dataSize))
+
+        do { try wav.write(to: url); return url } catch { return nil }
     }
-    
+
+    // MARK: - PiP Control
     func startPip(from parentViewController: UIViewController) {
         guard AVPictureInPictureController.isPictureInPictureSupported() else {
-            print("PiP is not supported on this device")
+            print("PiP not supported on this device/simulator")
             return
         }
-        
-        // Configure PiP view controller size
-        pipViewController.preferredContentSize = CGSize(width: 320, height: 110)
+
+        // Attach the invisible source view to the parent's view hierarchy (required)
+        parentViewController.view.addSubview(sourceView)
+
         let contentSource = AVPictureInPictureController.ContentSource(
-            activeVideoCallViewController: pipViewController,
-            preferredParentViewController: parentViewController
+            activeVideoCallSourceView: sourceView,
+            contentViewController: pipContentVC
         )
-        
+
         pipController = AVPictureInPictureController(contentSource: contentSource)
         pipController?.delegate = self
         pipController?.canStartPictureInPictureAutomaticallyFromBackground = true
-        
-        // Start background silent loop
+
         audioPlayer?.play()
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             self.pipController?.startPictureInPicture()
         }
     }
-    
+
     func stopPip() {
         pipController?.stopPictureInPicture()
         audioPlayer?.stop()
         stopClipboardPolling()
+        sourceView.removeFromSuperview()
     }
-    
+
+    // MARK: - Clipboard Polling
     func startClipboardPolling() {
         clipboardTimer?.invalidate()
         clipboardTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
             self?.checkClipboard()
         }
     }
-    
+
     func stopClipboardPolling() {
         clipboardTimer?.invalidate()
         clipboardTimer = nil
     }
-    
+
     private func checkClipboard() {
-        guard let copiedString = UIPasteboard.general.string, !copiedString.isEmpty else { return }
-        
-        if copiedString != lastCopiedString {
-            lastCopiedString = copiedString
-            currentText = copiedString
-            
-            translationService.translate(copiedString) { [weak self] result in
-                DispatchQueue.main.async {
-                    self?.translatedText = result
-                    self?.updatePipDisplay(original: copiedString, translated: result)
-                }
+        guard let copied = UIPasteboard.general.string,
+              !copied.isEmpty,
+              copied != lastCopiedString else { return }
+
+        lastCopiedString = copied
+        DispatchQueue.main.async { self.currentText = copied }
+
+        translationService.translate(copied) { [weak self] result in
+            DispatchQueue.main.async {
+                self?.translatedText = result
+                self?.pipContentVC.update(original: copied, translated: result)
             }
         }
     }
-    
-    private func updatePipDisplay(original: String, translated: String) {
-        let maxLen = 50
-        let originalSnippet = original.count > maxLen ? String(original.prefix(maxLen)) + "..." : original
-        
-        let displayText = """
-        "\(originalSnippet)"
-        ⬇️
-        \(translated)
-        """
-        
-        pipViewController.textLabel.text = displayText
-    }
-    
+
     // MARK: - AVPictureInPictureControllerDelegate
-    
-    func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+    func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
         DispatchQueue.main.async {
             self.isPipActive = true
             self.startClipboardPolling()
         }
     }
-    
-    func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+
+    func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
         DispatchQueue.main.async {
             self.isPipActive = false
             self.stopClipboardPolling()
         }
     }
-    
-    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, failedToStartPictureInPictureWithError error: Error) {
-        print("PiP failed to start: \(error.localizedDescription)")
-        DispatchQueue.main.async {
-            self.isPipActive = false
-        }
+
+    func pictureInPictureController(_ controller: AVPictureInPictureController,
+                                    failedToStartPictureInPictureWithError error: Error) {
+        print("PiP failed: \(error.localizedDescription)")
+        DispatchQueue.main.async { self.isPipActive = false }
     }
 }
