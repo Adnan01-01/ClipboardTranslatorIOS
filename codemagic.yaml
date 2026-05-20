@@ -1,0 +1,39 @@
+workflows:
+  ios-simulator-build:
+    name: iOS Simulator Build
+    max_build_duration: 30
+    instance_type: mac_mini_co2
+    environment:
+      xcode: latest
+      cocoapods: default
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: '*'
+          include: true
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          brew install xcodegen
+      - name: Generate Xcode Project
+        script: |
+          xcodegen generate
+      - name: Resolve Package Dependencies
+        script: |
+          xcodebuild -resolvePackageDependencies -project ClipboardTranslatorIOS.xcodeproj -scheme ClipboardTranslatorIOS
+      - name: Build Simulator App
+        script: |
+          xcodebuild \
+            -project ClipboardTranslatorIOS.xcodeproj \
+            -scheme ClipboardTranslatorIOS \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            build \
+            CONFIGURATION_BUILD_DIR=$FCI_BUILD_DIR/build
+      - name: Compress Simulator Build
+        script: |
+          cd $FCI_BUILD_DIR/build
+          zip -r $FCI_BUILD_DIR/ClipboardTranslatorIOS.zip ClipboardTranslatorIOS.app
+    artifacts:
+      - $FCI_BUILD_DIR/ClipboardTranslatorIOS.zip
