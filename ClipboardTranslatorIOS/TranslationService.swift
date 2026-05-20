@@ -39,9 +39,11 @@ class TranslationService: ObservableObject {
             self.isZhToEnDownloaded = zhReady && enReady
             self.isEnToZhDownloaded = enReady && zhReady
             self.isModelsReady = zhReady && enReady
-            self.statusMessage = self.isModelsReady
-                ? "Bilingual offline models ready ✓"
-                : "Language packs required for offline use"
+            if self.isModelsReady {
+                self.statusMessage = "Bilingual offline models ready"
+            } else {
+                self.statusMessage = "Language packs required for offline use"
+            }
         }
     }
 
@@ -51,7 +53,6 @@ class TranslationService: ObservableObject {
             allowsCellularAccess: true,
             allowsBackgroundDownloading: true
         )
-        // Download Chinese model by attempting translate (triggers model download)
         zhToEnTranslator?.downloadModelIfNeeded(with: conditions) { [weak self] error in
             if let error = error {
                 DispatchQueue.main.async {
@@ -75,9 +76,13 @@ class TranslationService: ObservableObject {
         }
     }
 
-    // Detect Chinese by checking CJK Unicode block
     private func isChineseText(_ text: String) -> Bool {
-        text.unicodeScalars.contains { $0.value >= 0x4E00 && $0.value <= 0x9FFF }
+        for scalar in text.unicodeScalars {
+            if scalar.value >= 0x4E00 && scalar.value <= 0x9FFF {
+                return true
+            }
+        }
+        return false
     }
 
     func translate(_ text: String, completion: @escaping (String) -> Void) {
@@ -96,7 +101,7 @@ class TranslationService: ObservableObject {
         )
         translator.downloadModelIfNeeded(with: conditions) { error in
             guard error == nil else {
-                completion("Model unavailable — please download first")
+                completion("Model unavailable - please download first")
                 return
             }
             translator.translate(cleaned) { result, error in
