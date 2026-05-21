@@ -69,6 +69,15 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
     @Published var isPipActive = false
     @Published var currentText = ""
     @Published var translatedText = ""
+    @Published var debugLogs: [String] = []
+
+    private func addLog(_ msg: String) {
+        let time = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        DispatchQueue.main.async {
+            self.debugLogs.insert("[\(time)] \(msg)", at: 0)
+            if self.debugLogs.count > 50 { self.debugLogs.removeLast() }
+        }
+    }
 
     private var pipController: AVPictureInPictureController?
     private let pipContentVC = PipContentViewController()
@@ -81,6 +90,7 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
     init(translationService: TranslationService) {
         self.translationService = translationService
         super.init()
+        addLog("PipTranslationManager initialized")
         setupAudioSession()
     }
 
@@ -91,6 +101,7 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
 
     // MARK: - Audio Session
     private func setupAudioSession() {
+        addLog("Setting up audio session...")
         do {
             let session = AVAudioSession.sharedInstance()
             // Using .playback as recommended for PiP reliability
@@ -100,8 +111,12 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
                 audioPlayer = try AVAudioPlayer(contentsOf: url)
                 audioPlayer?.numberOfLoops = -1
                 audioPlayer?.volume = 0.001
+                addLog("Audio session configured successfully")
+            } else {
+                addLog("Failed to create silent WAV file")
             }
         } catch {
+            addLog("Audio session error: \(error.localizedDescription)")
             print("Audio session error: \(error.localizedDescription)")
         }
     }
@@ -153,10 +168,13 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
 
     // MARK: - PiP Control
     func startPip(from parentViewController: UIViewController) {
+        addLog("startPip called")
         guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            addLog("ERROR: PiP not supported on this device/simulator")
             print("PiP not supported on this device")
             return
         }
+        addLog("PiP is supported")
 
         parentViewController.view.addSubview(sourceView)
 
@@ -168,15 +186,19 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
         pipController = AVPictureInPictureController(contentSource: contentSource)
         pipController?.delegate = self
         pipController?.canStartPictureInPictureAutomaticallyFromInline = true
+        addLog("AVPictureInPictureController created")
 
         audioPlayer?.play()
+        addLog("Audio player started")
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            addLog("Calling startPictureInPicture()")
             self.pipController?.startPictureInPicture()
         }
     }
 
     func stopPip() {
+        addLog("stopPip called")
         pipController?.stopPictureInPicture()
         audioPlayer?.stop()
         stopClipboardPolling()
@@ -214,6 +236,7 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
 
     // MARK: - AVPictureInPictureControllerDelegate
     func pictureInPictureControllerDidStartPictureInPicture(_ controller: AVPictureInPictureController) {
+        addLog("SUCCESS: PiP window started!")
         DispatchQueue.main.async {
             self.isPipActive = true
             self.startClipboardPolling()
@@ -221,6 +244,7 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
     }
 
     func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
+        addLog("PiP window stopped")
         DispatchQueue.main.async {
             self.isPipActive = false
             self.stopClipboardPolling()
@@ -231,6 +255,7 @@ class PipTranslationManager: NSObject, ObservableObject, AVPictureInPictureContr
         _ controller: AVPictureInPictureController,
         failedToStartPictureInPictureWithError error: Error
     ) {
+        addLog("ERROR: PiP failed to start: \(error.localizedDescription)")
         print("PiP failed: \(error.localizedDescription)")
         DispatchQueue.main.async { self.isPipActive = false }
     }

@@ -249,6 +249,37 @@ struct ContentView: View {
                     .background(Color.white.opacity(0.02))
                     .cornerRadius(16)
 
+                    // Card 5: Debug Logs
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Debug Logs")
+                            .font(.headline)
+                            .foregroundColor(.white)
+                        
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 4) {
+                                if pipManager.debugLogs.isEmpty {
+                                    Text("No logs yet...")
+                                        .foregroundColor(.white.opacity(0.5))
+                                        .font(.caption)
+                                } else {
+                                    ForEach(pipManager.debugLogs, id: \.self) { log in
+                                        Text(log)
+                                            .font(.system(size: 11, design: .monospaced))
+                                            .foregroundColor(log.contains("ERROR") ? .red : .green)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                            }
+                            .padding()
+                        }
+                        .frame(height: 150)
+                        .background(Color.black.opacity(0.5))
+                        .cornerRadius(12)
+                    }
+                    .padding()
+                    .background(Color.white.opacity(0.04))
+                    .cornerRadius(16)
+
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 32)
